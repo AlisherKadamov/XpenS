@@ -24,19 +24,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Segoe UI',sans-serif
 
 /* Input bar - fixed bottom */
 .input-area{position:fixed;bottom:0;left:0;right:0;padding:8px 16px calc(8px + env(safe-area-inset-bottom));background:var(--bg);border-top:1px solid var(--border);z-index:50}
-.input-row{display:flex;gap:8px}
-.input-row input{flex:1;padding:13px 16px;border-radius:14px;border:1.5px solid var(--border);background:var(--bg2);color:var(--text);font-size:17px;outline:none;-webkit-appearance:none}
+.input-row{display:flex;gap:8px;position:relative}
+.input-row input{flex:1;padding:13px 16px 13px 16px;border-radius:14px;border:1.5px solid var(--border);background:var(--bg2);color:var(--text);font-size:17px;outline:none;-webkit-appearance:none;padding-right:44px}
 .input-row input:focus{border-color:var(--accent)}
 .input-row input::placeholder{color:var(--text2)}
 .btn-add{width:50px;border-radius:14px;border:none;background:var(--accent);color:#000;font-size:22px;font-weight:700;cursor:pointer}
 .btn-add:active{transform:scale(0.95)}
-
-/* Quick category chips */
-.quick-cats{display:flex;gap:6px;margin-top:8px;overflow-x:auto;scrollbar-width:none}
-.quick-cats::-webkit-scrollbar{display:none}
-.qcat{padding:5px 12px;border-radius:18px;border:1.5px solid var(--border);background:var(--bg2);color:var(--text2);font-size:12px;font-weight:500;cursor:pointer;white-space:nowrap;flex-shrink:0;transition:all .15s}
-.qcat.on{border-color:var(--accent);color:var(--accent);background:rgba(245,166,35,.1)}
-.qcat:active{transform:scale(0.95)}
+.cat-preview{position:absolute;right:62px;top:50%;transform:translateY(-50%);font-size:20px;pointer-events:none;transition:opacity .15s;opacity:0}
+.cat-preview.show{opacity:1}
 
 /* Tabs */
 .tabs{display:flex;margin:8px 16px;border-radius:12px;background:var(--bg2);overflow:hidden}
@@ -70,7 +65,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Segoe UI',sans-serif
 .search-input::placeholder{color:var(--text2)}
 
 /* Content */
-.content{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:calc(110px + env(safe-area-inset-bottom))}
+.content{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:calc(80px + env(safe-area-inset-bottom))}
 
 /* Cards */
 .card{margin:0 16px 6px;padding:11px 12px;border-radius:12px;background:var(--bg2);border:1px solid var(--border);display:flex;align-items:center;gap:10px}
@@ -156,7 +151,7 @@ var CATS=[
 {id:"work",name:"Работа",emoji:"💼",color:"#84CC16"},
 {id:"other",name:"Прочее",emoji:"📦",color:"#94A3B8"}
 ];
-var QUICK_CATS=["food","transport","home","health","entertainment","other"];
+var QUICK_CATS=null; // removed
 
 var KW={
 food:["кофе","кафе","обед","ужин","завтрак","ресторан","продукт","магазин","маркет","хлеб","молоко","мясо","фрукт","овощ","пицца","бургер","суши","плов","лагман","самса","шаурма","чай","сок","перекус","доставка","еда","макдональдс","kfc","burger","coffee","lunch","корзинка","havas","evos","grocery","супермаркет","мороженое","сладост","торт","пирож","нан"],
@@ -174,7 +169,7 @@ var MN=["Янв","Фев","Мар","Апр","Май","Июн","Июл","Авг",
 
 // ===================== STATE =====================
 var expenses=JSON.parse(localStorage.getItem("exp_v4")||"[]");
-var tab="list",selMonth="all",pendingExp=null,preselCat=null;
+var tab="list",selMonth="all",pendingExp=null;
 var searchQ="";
 var SHEET_URL=localStorage.getItem("sheet_url")||"";
 var BUDGET=parseInt(localStorage.getItem("budget")||"0");
@@ -426,15 +421,10 @@ function render(){
 
   // Fixed input at bottom
   h+=`<div class="input-area"><div class="input-row">
-  <input id="inp" type="text" placeholder="кофе 25000" enterkeyhint="done" inputmode="text" autocomplete="off">
+  <input id="inp" type="text" placeholder="кофе 25000" enterkeyhint="done" inputmode="text" autocomplete="off" oninput="livePreview(this.value)">
+  <div id="catPreview" class="cat-preview"></div>
   <button class="btn-add" onclick="submit()">+</button>
-  </div>
-  <div class="quick-cats">`;
-  QUICK_CATS.forEach(function(cid){
-    var c=catOf(cid);
-    h+=`<button class="qcat ${preselCat===cid?"on":""}" onclick="toggleCat('${cid}')">${c.emoji} ${c.name}</button>`;
-  });
-  h+=`</div></div>`;
+  </div></div>`;
 
   app.innerHTML=h;
 
@@ -446,16 +436,25 @@ function render(){
 function submit(){
   var inp=document.getElementById("inp");if(!inp)return;
   var p=parse(inp.value);if(!p)return;
-  var cat=preselCat||detect(p.description);
-  if(cat==="other"&&!preselCat){pendingExp=p;showPicker();return}
+  var cat=detect(p.description);
+  if(cat==="other"){pendingExp=p;showPicker();return}
   addExp(p.description,p.amount,cat);
-  inp.value="";preselCat=null;inp.focus();
+  inp.value="";livePreview("");inp.focus();
 }
 
 function setTab(t){tab=t;searchQ="";render()}
 function setMonth(m){selMonth=m;render()}
 function onSearch(v){searchQ=v;render();var el=document.getElementById("searchInp");if(el){el.focus();el.setSelectionRange(v.length,v.length)}}
-function toggleCat(id){preselCat=preselCat===id?null:id;render();document.getElementById("inp").focus()}
+
+function livePreview(val){
+  var el=document.getElementById("catPreview");if(!el)return;
+  var p=parse(val);
+  if(!p){el.className="cat-preview";el.textContent="";return}
+  var cat=detect(p.description);
+  var c=catOf(cat);
+  el.textContent=c.emoji;
+  el.className="cat-preview show";
+}
 
 // ===================== CATEGORY PICKER =====================
 function showPicker(){
